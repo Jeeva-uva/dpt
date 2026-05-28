@@ -29,8 +29,8 @@ SERVER_HOST=<public-ip-of-this-server> ./run.sh
 Use the IP/hostname your browser will reach — **not** `localhost`, or the UI can't talk to
 the API. Set the admin password with `DT_ADMIN_PASSWORD=...` (default `ChangeMe123!`).
 
-`run.sh` then: starts the 6 containers → generates SBOMs → waits for each API → creates the
-projects → uploads. First run pulls the ~16 GB cdxgen image, so it's slow.
+`run.sh` then: starts the 6 containers → generates SBOMs (with Syft, CycloneDX spec 1.5) →
+waits for each API → creates the projects → uploads.
 
 When it finishes, open the dashboards (login `admin` / your password):
 `http://<ip>:8091` (acme), `:8092` (beta), `:8093` (gamma). Minted API keys land in
@@ -50,7 +50,7 @@ SKIP_UP=1    ./run.sh   # don't (re)start containers, just upload
 | `run.sh` | One-shot orchestrator (start → SBOMs → upload) |
 | `config.py` | Department/project topology — the only file you edit to change what's deployed |
 | `docker-compose.yml` | The 6 containers (apiserver + frontend per dept) |
-| `gen_sboms.sh` | Clones the demo repos and runs cdxgen to produce `<dept>-<project>.cdx.json` |
+| `gen_sboms.sh` | Clones the demo repos and runs Syft (CycloneDX 1.5) to produce `<dept>-<project>.cdx.json` |
 | `setup_and_upload.py` | Authenticates, creates projects, uploads SBOMs, writes `api_keys.json` |
 
 ## Teardown
