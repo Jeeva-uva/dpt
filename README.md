@@ -43,6 +43,19 @@ SKIP_SBOMS=1 ./run.sh   # don't regenerate SBOMs (expects ./sboms/*.cdx.json to 
 SKIP_UP=1    ./run.sh   # don't (re)start containers, just upload
 ```
 
+## Combined report (all departments in one view)
+
+Each Dependency-Track instance only shows its own company. To see all three together,
+generate a combined dashboard:
+
+```bash
+python3 combined_report.py            # writes reports/combined_report_latest.{json,html}
+python3 combined_report.py --serve    # ...and serve it on :8090
+```
+
+With `--serve`, open `http://<server-ip>:8090/combined_report_latest.html` from your browser.
+Metrics populate a few minutes after upload — if everything shows 0, wait and re-run.
+
 ## Files
 
 | File | Purpose |
@@ -52,6 +65,7 @@ SKIP_UP=1    ./run.sh   # don't (re)start containers, just upload
 | `docker-compose.yml` | The 6 containers (apiserver + frontend per dept) |
 | `gen_sboms.sh` | Clones the demo repos and runs Syft (CycloneDX 1.5) to produce `<dept>-<project>.cdx.json` |
 | `setup_and_upload.py` | Authenticates, creates projects, uploads SBOMs, writes `api_keys.json` |
+| `combined_report.py` | Pulls metrics/findings from all 3 instances into one HTML+JSON dashboard |
 
 ## Teardown
 
