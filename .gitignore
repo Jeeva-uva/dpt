@@ -1,0 +1,8 @@
+# runtime artifacts — never commit these
+api_keys.json
+sboms/
+src/
+
+# python
+__pycache__/
+*.pyc

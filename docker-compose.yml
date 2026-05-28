@@ -1,0 +1,33 @@
+name: dept-track-multi
+
+# Three isolated Dependency-Track instances (apiserver + frontend each).
+# ${SERVER_HOST} is interpolated from the environment by run.sh.
+
+x-apiserver: &apiserver
+  image: dependencytrack/apiserver:latest
+  environment:
+    EXTRA_JAVA_OPTIONS: "-Xmx2g"   # cap heap so 3 instances fit; default is -Xmx4G
+  restart: unless-stopped
+  deploy:
+    resources:
+      limits:
+        memory: 3g
+
+x-frontend: &frontend
+  image: dependencytrack/frontend:latest
+  restart: unless-stopped
+
+services:
+  acme-apiserver:   { <<: *apiserver, ports: ["8081:8080"], volumes: ["acme-data:/data"] }
+  acme-frontend:    { <<: *frontend,  ports: ["8091:8080"], environment: { API_BASE_URL: "http://${SERVER_HOST}:8081" } }
+
+  beta-apiserver:   { <<: *apiserver, ports: ["8082:8080"], volumes: ["beta-data:/data"] }
+  beta-frontend:    { <<: *frontend,  ports: ["8092:8080"], environment: { API_BASE_URL: "http://${SERVER_HOST}:8082" } }
+
+  gamma-apiserver:  { <<: *apiserver, ports: ["8083:8080"], volumes: ["gamma-data:/data"] }
+  gamma-frontend:   { <<: *frontend,  ports: ["8093:8080"], environment: { API_BASE_URL: "http://${SERVER_HOST}:8083" } }
+
+volumes:
+  acme-data:
+  beta-data:
+  gamma-data:
