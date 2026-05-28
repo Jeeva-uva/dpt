@@ -27,7 +27,7 @@ def _company(name, api_port, fe_port, projects):
 
 
 COMPANIES = {
-    "acme": _company("Acme Corp", 8081, 8091, [
+    "acme": _company("Acme Corp", 18081, 8091, [
         {"name": "express",    "version": "latest", "description": "Express.js - Fast Node.js web framework"},
         {"name": "juice-shop", "version": "latest", "description": "OWASP Juice Shop - intentionally insecure Node.js app"},
     ]),
