@@ -40,6 +40,7 @@ def collect():
     grouped = defaultdict(list)
 
     projects = api_get(f"{API_URL}/api/v1/project?pageSize=500&pageNumber=1", API_KEY) or []
+    print(json.dumps(projects, indent=2))
 
     for p in projects:
         team = (p.get("team") or {}).get("name", "unassigned")
