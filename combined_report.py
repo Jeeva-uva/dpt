@@ -37,61 +37,70 @@ def api_get(url, api_key):
 
 
 def collect():
-    grouped = defaultdict(list)
-
-    projects = api_get(f"{API_URL}/api/v1/project?pageSize=500&pageNumber=1", API_KEY) or []
-    print(json.dumps(projects, indent=2))
-
-    for p in projects:
-        team = (p.get("team") or {}).get("name", "unassigned")
-
-        uuid = p["uuid"]
-        m = api_get(f"{API_URL}/api/v1/metrics/project/{uuid}/current", API_KEY) or {}
-        findings = api_get(f"{API_URL}/api/v1/finding/project/{uuid}", API_KEY) or []
-
-        findings.sort(key=lambda f: SEV_ORDER.get(
-            (f.get("vulnerability") or {}).get("severity", "UNASSIGNED"), 9))
-
-        top = []
-        for f in findings[:TOP_N]:
-            v = f.get("vulnerability") or {}
-            top.append({
-                "vulnId": v.get("vulnId"),
-                "severity": v.get("severity"),
-                "source": v.get("source"),
-                "description": (v.get("description") or "")[:220],
-            })
-
-        grouped[team].append({
-            "name": p.get("name"),
-            "version": p.get("version"),
-            "uuid": uuid,
-            "description": p.get("description", ""),
-            "total_components": m.get("components", 0),
-            "total_vulnerabilities": m.get("vulnerabilities", 0),
-            "vulnerabilities_by_severity": {
-                "CRITICAL": m.get("critical", 0),
-                "HIGH": m.get("high", 0),
-                "MEDIUM": m.get("medium", 0),
-                "LOW": m.get("low", 0),
-                "UNASSIGNED": m.get("unassigned", 0),
-            },
-            "risk_score": m.get("inheritedRiskScore", 0),
-            "top_vulnerabilities": top,
-        })
-
-    # Convert to same structure your HTML expects
     report = []
-    for team, projects in grouped.items():
-        report.append({
-            "company_id": team,
-            "company_name": team,
+
+    teams = api_get(f"{API_URL}/api/v1/team", API_KEY) or []
+
+    for team in teams:
+        team_uuid = team["uuid"]
+        team_name = team["name"]
+
+        print(f"Fetching projects for team: {team_name}")
+
+        projects = api_get(
+            f"{API_URL}/api/v1/acl/team/{team_uuid}?pageSize=500&pageNumber=1",
+            API_KEY
+        ) or []
+
+        entry = {
+            "company_id": team_name,
+            "company_name": team_name,
             "api_url": API_URL,
             "frontend_url": API_URL,
-            "projects": projects,
-        })
+            "projects": []
+        }
+
+        for p in projects:
+            uuid = p["uuid"]
+
+            m = api_get(f"{API_URL}/api/v1/metrics/project/{uuid}/current", API_KEY) or {}
+            findings = api_get(f"{API_URL}/api/v1/finding/project/{uuid}", API_KEY) or []
+
+            findings.sort(key=lambda f: SEV_ORDER.get(
+                (f.get("vulnerability") or {}).get("severity", "UNASSIGNED"), 9))
+
+            top = []
+            for f in findings[:TOP_N]:
+                v = f.get("vulnerability") or {}
+                top.append({
+                    "vulnId": v.get("vulnId"),
+                    "severity": v.get("severity"),
+                    "source": v.get("source"),
+                    "description": (v.get("description") or "")[:220],
+                })
+
+            entry["projects"].append({
+                "name": p.get("name"),
+                "version": p.get("version"),
+                "uuid": uuid,
+                "description": p.get("description", ""),
+                "total_components": m.get("components", 0),
+                "total_vulnerabilities": m.get("vulnerabilities", 0),
+                "vulnerabilities_by_severity": {
+                    "CRITICAL": m.get("critical", 0),
+                    "HIGH": m.get("high", 0),
+                    "MEDIUM": m.get("medium", 0),
+                    "LOW": m.get("low", 0),
+                    "UNASSIGNED": m.get("unassigned", 0),
+                },
+                "risk_score": m.get("inheritedRiskScore", 0),
+                "top_vulnerabilities": top,
+            })
+
+        report.append(entry)
 
     return report
+
 
 
 
