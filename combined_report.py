@@ -52,6 +52,9 @@ def collect():
             API_KEY
         ) or []
 
+        if not projects:
+            continue
+
         entry = {
             "company_id": team_name,
             "company_name": team_name,
