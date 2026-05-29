@@ -13,12 +13,12 @@ Usage:
 """
 import sys, os, json, html, urllib.request, urllib.error
 from datetime import datetime
+from collections import defaultdict
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
-from config import COMPANIES
-
-KEYS_FILE = os.path.join(BASE_DIR, "api_keys.json")
+API_URL = "http://localhost:8088"
+API_KEY = "odt_eGC3PlT2_eEMAyQbnd6bVvk9Kfvh8Fgx6fmISFbke"
 REPORT_DIR = os.path.join(BASE_DIR, "reports")
 SEV_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4, "UNASSIGNED": 5}
 TOP_N = 5
@@ -35,56 +35,63 @@ def api_get(url, api_key):
     return None
 
 
-def collect():
-    if not os.path.exists(KEYS_FILE):
-        sys.exit(f"ERROR: {KEYS_FILE} not found — run setup_and_upload.py first.")
-    api_keys = json.load(open(KEYS_FILE))
 
-    report = []
-    for cid, company in COMPANIES.items():
-        key = api_keys.get(cid)
-        if not key:
-            print(f"  no API key for {cid}, skipping")
-            continue
-        api_url = company["api_url"]
-        entry = {
-            "company_id": cid, "company_name": company["name"],
-            "api_url": api_url, "frontend_url": company["frontend_url"],
-            "projects": [],
-        }
-        projects = api_get(f"{api_url}/api/v1/project?pageSize=500&pageNumber=1", key) or []
-        for p in projects:
-            uuid = p["uuid"]
-            m = api_get(f"{api_url}/api/v1/metrics/project/{uuid}/current", key) or {}
-            findings = api_get(f"{api_url}/api/v1/finding/project/{uuid}", key) or []
-            findings.sort(key=lambda f: SEV_ORDER.get(
-                (f.get("vulnerability") or {}).get("severity", "UNASSIGNED"), 9))
-            top = []
-            for f in findings[:TOP_N]:
-                v = f.get("vulnerability") or {}
-                top.append({
-                    "vulnId": v.get("vulnId"), "severity": v.get("severity"),
-                    "source": v.get("source"), "description": (v.get("description") or "")[:220],
-                })
-            entry["projects"].append({
-                "name": p.get("name"), "version": p.get("version"), "uuid": uuid,
-                "description": p.get("description", ""),
-                "total_components": m.get("components", 0),
-                "total_vulnerabilities": m.get("vulnerabilities", 0),
-                "vulnerabilities_by_severity": {
-                    "CRITICAL": m.get("critical", 0), "HIGH": m.get("high", 0),
-                    "MEDIUM": m.get("medium", 0), "LOW": m.get("low", 0),
-                    "UNASSIGNED": m.get("unassigned", 0),
-                },
-                "risk_score": m.get("inheritedRiskScore", 0),
-                "metrics": {k: m.get(k, 0) for k in (
-                    "critical", "high", "medium", "low", "unassigned", "vulnerabilities",
-                    "components", "suppressed", "findingsTotal", "findingsAudited",
-                    "findingsUnaudited", "inheritedRiskScore", "policyViolationsTotal")},
-                "top_vulnerabilities": top,
+def collect():
+    grouped = defaultdict(list)
+
+    projects = api_get(f"{API_URL}/api/v1/project?pageSize=500&pageNumber=1", API_KEY) or []
+
+    for p in projects:
+        team = (p.get("team") or {}).get("name", "unassigned")
+
+        uuid = p["uuid"]
+        m = api_get(f"{API_URL}/api/v1/metrics/project/{uuid}/current", API_KEY) or {}
+        findings = api_get(f"{API_URL}/api/v1/finding/project/{uuid}", API_KEY) or []
+
+        findings.sort(key=lambda f: SEV_ORDER.get(
+            (f.get("vulnerability") or {}).get("severity", "UNASSIGNED"), 9))
+
+        top = []
+        for f in findings[:TOP_N]:
+            v = f.get("vulnerability") or {}
+            top.append({
+                "vulnId": v.get("vulnId"),
+                "severity": v.get("severity"),
+                "source": v.get("source"),
+                "description": (v.get("description") or "")[:220],
             })
-        report.append(entry)
+
+        grouped[team].append({
+            "name": p.get("name"),
+            "version": p.get("version"),
+            "uuid": uuid,
+            "description": p.get("description", ""),
+            "total_components": m.get("components", 0),
+            "total_vulnerabilities": m.get("vulnerabilities", 0),
+            "vulnerabilities_by_severity": {
+                "CRITICAL": m.get("critical", 0),
+                "HIGH": m.get("high", 0),
+                "MEDIUM": m.get("medium", 0),
+                "LOW": m.get("low", 0),
+                "UNASSIGNED": m.get("unassigned", 0),
+            },
+            "risk_score": m.get("inheritedRiskScore", 0),
+            "top_vulnerabilities": top,
+        })
+
+    # Convert to same structure your HTML expects
+    report = []
+    for team, projects in grouped.items():
+        report.append({
+            "company_id": team,
+            "company_name": team,
+            "api_url": API_URL,
+            "frontend_url": API_URL,
+            "projects": projects,
+        })
+
     return report
+
 
 
 def render_html(report):
@@ -180,7 +187,7 @@ h1 {{ text-align:center; color:#38bdf8; margin-bottom:8px; }}
   <div class="summary-card"><div class="value" style="color:#f97316">{sev_tot['HIGH']}</div><div class="label">High</div></div>
 </div>
 {''.join(secs)}
-<div class="footer">Generated from {companies} Dependency-Track instances · combined_report.py</div>
+<div class="footer">Generated from a single Dependency-Track instance (team-based multi-tenancy) · combined_report.py</div>
 </div></body></html>"""
 
 
