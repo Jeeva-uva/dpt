@@ -149,7 +149,7 @@ def render_html(report):
     <div class="company-section">
       <div class="company-header">
         <span class="company-name">{html.escape(c['company_name'])}</span>
-        # <a class="company-badge" href="{html.escape(c['frontend_url'])}" target="_blank">{html.escape(c['frontend_url'])}</a>
+        /* <a class="company-badge" href="{html.escape(c['frontend_url'])}" target="_blank">{html.escape(c['frontend_url'])}</a>*/
       </div>
       <div class="project-grid">{''.join(cards)}</div>
     </div>""")
