@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Combined Dependency-Track Report</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',Tahoma,sans-serif}</style>
+</head>
+<body class="p-5">
+<div class="max-w-7xl mx-auto">
+
+  <h1 class="text-3xl font-bold text-sky-400 text-center mb-1">Combined Dependency-Track Report</h1>
+  <p class="text-slate-400 text-center mb-6">Multi-Company Vulnerability Monitoring</p>
+
+  <!-- Config panel -->
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6 flex flex-wrap gap-3 items-end">
+    <div class="flex-1 min-w-[220px]">
+      <label class="block text-xs text-slate-400 mb-1">Dependency-Track URL</label>
+      <input id="apiUrl" type="text" placeholder="http://localhost:8088"
+             class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
+    </div>
+    <div class="flex-1 min-w-[220px]">
+      <label class="block text-xs text-slate-400 mb-1">API key (X-Api-Key)</label>
+      <input id="apiKey" type="password" placeholder="odt_..."
+             class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
+    </div>
+    <button id="generate" class="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold px-6 py-2 rounded">
+      Generate report
+    </button>
+  </div>
+
+  <div id="status" class="text-slate-400 text-center mb-4 min-h-[1.25rem]"></div>
+
+  <!-- Summary cards -->
+  <div id="summary" class="grid gap-4 mb-6 hidden"
+       style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))"></div>
+
+  <!-- Company sections -->
+  <div id="companies"></div>
+
+  <div id="footer" class="text-center text-slate-500 mt-8 pt-5 border-t border-slate-700 hidden">
+    Generated <span id="ts"></span>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const SEV = { CRITICAL:0, HIGH:1, MEDIUM:2, LOW:3, INFO:4, UNASSIGNED:5 };
+const TOP_N = 5;
+
+// remember the last URL + key so you don't retype
+$('apiUrl').value = localStorage.getItem('dt_url') || '';
+$('apiKey').value = localStorage.getItem('dt_key') || '';
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const sevCls = s => ({
+  CRITICAL:'bg-red-500/20 text-red-400',
+  HIGH:'bg-orange-500/20 text-orange-400',
+  MEDIUM:'bg-yellow-500/20 text-yellow-400',
+  LOW:'bg-green-500/20 text-green-400',
+  UNASSIGNED:'bg-slate-500/20 text-slate-400'
+}[s] || 'bg-slate-500/20 text-slate-400');
+
+const riskCls = r => r >= 50 ? 'text-red-400' : r >= 10 ? 'text-orange-400' : 'text-green-400';
+
+async function get(url, key) {
+  try {
+    const r = await fetch(url, { headers: { 'X-Api-Key': key } });
+    return r.ok ? r.json() : null;
+  } catch { return null; }
+}
+
+const sumCard = (label, value, color = 'text-sky-400') => `
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 text-center">
+    <div class="text-4xl font-bold ${color}">${value}</div>
+    <div class="text-slate-400 mt-1">${label}</div>
+  </div>`;
+
+const projectCard = p => {
+  const sb = p.severities;
+  const badges = ['CRITICAL','HIGH','MEDIUM','LOW'].map(s =>
+    `<span class="px-2.5 py-1 rounded-full text-xs font-semibold ${sevCls(s)}">${s.slice(0,4)} ${sb[s]||0}</span>`
+  ).join('');
+  const rows = (p.top || []).map(v => `
+    <tr class="border-b border-slate-800">
+      <td class="p-2 text-xs">${esc(v.vulnId)}</td>
+      <td class="p-2 text-xs"><span class="px-2 py-0.5 rounded-full ${sevCls(v.severity)}">${esc(v.severity)}</span></td>
+      <td class="p-2 text-xs">${esc(v.source)}</td>
+      <td class="p-2 text-xs text-slate-300">${esc(v.description)}</td>
+    </tr>`).join('')
+    || `<tr><td colspan="4" class="p-3 text-center text-green-400 text-sm">No vulnerabilities 🎉</td></tr>`;
+  return `
+    <div class="bg-slate-900 border border-slate-700 rounded-lg p-4">
+      <h3 class="text-sky-400 font-semibold mb-1">${esc(p.name)}
+        <span class="text-slate-500 text-sm font-normal">${esc(p.version || '')}</span></h3>
+      <p class="text-slate-400 text-sm mb-3">${esc(p.description)}</p>
+      <div class="flex justify-between border-b border-slate-800 py-1.5"><span class="text-slate-400">Components</span><span class="font-semibold">${p.components}</span></div>
+      <div class="flex justify-between border-b border-slate-800 py-1.5"><span class="text-slate-400">Vulnerabilities</span><span class="font-semibold">${p.vulnerabilities}</span></div>
+      <div class="flex justify-between border-b border-slate-800 py-1.5"><span class="text-slate-400">Risk score</span><span class="font-semibold ${riskCls(p.risk)}">${p.risk}</span></div>
+      <div class="flex flex-wrap gap-2 my-3">${badges}</div>
+      <table class="w-full border-collapse">
+        <thead><tr class="border-b border-slate-700">
+          <th class="text-left text-xs text-slate-400 p-2">Vuln</th>
+          <th class="text-left text-xs text-slate-400 p-2">Severity</th>
+          <th class="text-left text-xs text-slate-400 p-2">Source</th>
+          <th class="text-left text-xs text-slate-400 p-2">Description</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+};
+
+const companySection = c => `
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">
+    <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+      <span class="text-2xl font-bold text-slate-100">${esc(c.name)}</span>
+      <span class="bg-slate-700 px-3.5 py-1.5 rounded-full text-sm text-slate-300">${c.projects.length} project${c.projects.length===1?'':'s'}</span>
+    </div>
+    <div class="grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
+      ${c.projects.map(projectCard).join('')}
+    </div>
+  </div>`;
+
+async function generate() {
+  const url = $('apiUrl').value.trim().replace(/\/+$/, '');
+  const key = $('apiKey').value.trim();
+  if (!url || !key) { $('status').textContent = 'Enter the Dependency-Track URL and API key.'; return; }
+  localStorage.setItem('dt_url', url);
+  localStorage.setItem('dt_key', key);
+
+  $('generate').disabled = true;
+  $('summary').classList.add('hidden');
+  $('footer').classList.add('hidden');
+  $('companies').innerHTML = '';
+  $('status').textContent = 'Fetching teams...';
+
+  const teams = await get(`${url}/api/v1/team`, key);
+  if (!teams) {
+    $('status').innerHTML = 'Could not fetch /api/v1/team — check URL, API key, and that Dependency-Track has CORS enabled.';
+    $('generate').disabled = false; return;
+  }
+
+  const companies = [];
+  for (const t of teams) {
+    $('status').textContent = `Loading ${t.name}...`;
+    const projects = await get(`${url}/api/v1/acl/team/${t.uuid}?pageSize=500&pageNumber=1`, key) || [];
+    if (!projects.length) continue;
+
+    const projList = [];
+    for (const p of projects) {
+      const m = await get(`${url}/api/v1/metrics/project/${p.uuid}/current`, key) || {};
+      const findings = await get(`${url}/api/v1/finding/project/${p.uuid}`, key) || [];
+      findings.sort((a, b) =>
+        (SEV[(a.vulnerability || {}).severity || 'UNASSIGNED'] ?? 9) -
+        (SEV[(b.vulnerability || {}).severity || 'UNASSIGNED'] ?? 9));
+      projList.push({
+        name: p.name, version: p.version, description: p.description || '',
+        components: m.components || 0,
+        vulnerabilities: m.vulnerabilities || 0,
+        risk: m.inheritedRiskScore || 0,
+        severities: {
+          CRITICAL: m.critical || 0, HIGH: m.high || 0, MEDIUM: m.medium || 0,
+          LOW: m.low || 0, UNASSIGNED: m.unassigned || 0
+        },
+        top: findings.slice(0, TOP_N).map(f => {
+          const v = f.vulnerability || {};
+          return { vulnId: v.vulnId, severity: v.severity, source: v.source,
+                   description: (v.description || '').slice(0, 220) };
+        })
+      });
+    }
+    companies.push({ name: t.name, projects: projList });
+  }
+
+  if (!companies.length) {
+    $('status').textContent = 'No teams with projects found.'; $('generate').disabled = false; return;
+  }
+
+  const tot = companies.reduce((a, c) => {
+    a.projects += c.projects.length;
+    for (const p of c.projects) {
+      a.comps += p.components; a.vulns += p.vulnerabilities;
+      a.crit += p.severities.CRITICAL; a.high += p.severities.HIGH;
+    }
+    return a;
+  }, { projects: 0, comps: 0, vulns: 0, crit: 0, high: 0 });
+
+  $('summary').innerHTML = [
+    sumCard('Companies', companies.length),
+    sumCard('Projects', tot.projects),
+    sumCard('Components', tot.comps),
+    sumCard('Vulnerabilities', tot.vulns),
+    sumCard('Critical', tot.crit, 'text-red-500'),
+    sumCard('High', tot.high, 'text-orange-500')
+  ].join('');
+  $('summary').classList.remove('hidden');
+  $('companies').innerHTML = companies.map(companySection).join('');
+  $('ts').textContent = new Date().toLocaleString();
+  $('footer').classList.remove('hidden');
+  $('status').textContent = '';
+  $('generate').disabled = false;
+}
+
+$('generate').addEventListener('click', generate);
+</script>
+</body>
+</html>
