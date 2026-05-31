@@ -11,32 +11,20 @@
 <div class="max-w-7xl mx-auto">
 
   <h1 class="text-3xl font-bold text-sky-400 text-center mb-1">Combined Dependency-Track Report</h1>
-  <p class="text-slate-400 text-center mb-6">Multi-Company Vulnerability Monitoring</p>
+  <p class="text-slate-400 text-center mb-4">Multi-Company Vulnerability Monitoring</p>
 
-  <!-- Config panel -->
-  <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6 flex flex-wrap gap-3 items-end">
-    <div class="flex-1 min-w-[220px]">
-      <label class="block text-xs text-slate-400 mb-1">Dependency-Track URL</label>
-      <input id="apiUrl" type="text" placeholder="http://localhost:8088"
-             class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
-    </div>
-    <div class="flex-1 min-w-[220px]">
-      <label class="block text-xs text-slate-400 mb-1">API key (X-Api-Key)</label>
-      <input id="apiKey" type="password" placeholder="odt_..."
-             class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
-    </div>
-    <button id="generate" class="bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold px-6 py-2 rounded">
-      Generate report
+  <div class="text-center mb-6">
+    <button id="refresh"
+      class="bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 font-semibold px-6 py-2 rounded">
+      ↻ Refresh
     </button>
   </div>
 
   <div id="status" class="text-slate-400 text-center mb-4 min-h-[1.25rem]"></div>
 
-  <!-- Summary cards -->
   <div id="summary" class="grid gap-4 mb-6 hidden"
        style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))"></div>
 
-  <!-- Company sections -->
   <div id="companies"></div>
 
   <div id="footer" class="text-center text-slate-500 mt-8 pt-5 border-t border-slate-700 hidden">
@@ -45,13 +33,14 @@
 </div>
 
 <script>
+// ---------- hardcoded Dependency-Track endpoint + key ----------
+const API_URL = "http://192.168.112.134:8088";
+const API_KEY = "odt_eGC3PlT2_eEMAyQbnd6bVvk9Kfvh8Fgx6fmISFbke";
+// ---------------------------------------------------------------
+
 const $ = id => document.getElementById(id);
 const SEV = { CRITICAL:0, HIGH:1, MEDIUM:2, LOW:3, INFO:4, UNASSIGNED:5 };
 const TOP_N = 5;
-
-// remember the last URL + key so you don't retype
-$('apiUrl').value = localStorage.getItem('dt_url') || '';
-$('apiKey').value = localStorage.getItem('dt_key') || '';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -66,9 +55,9 @@ const sevCls = s => ({
 
 const riskCls = r => r >= 50 ? 'text-red-400' : r >= 10 ? 'text-orange-400' : 'text-green-400';
 
-async function get(url, key) {
+async function get(url) {
   try {
-    const r = await fetch(url, { headers: { 'X-Api-Key': key } });
+    const r = await fetch(url, { headers: { 'X-Api-Key': API_KEY } });
     return r.ok ? r.json() : null;
   } catch { return null; }
 }
@@ -124,35 +113,29 @@ const companySection = c => `
     </div>
   </div>`;
 
-async function generate() {
-  const url = $('apiUrl').value.trim().replace(/\/+$/, '');
-  const key = $('apiKey').value.trim();
-  if (!url || !key) { $('status').textContent = 'Enter the Dependency-Track URL and API key.'; return; }
-  localStorage.setItem('dt_url', url);
-  localStorage.setItem('dt_key', key);
-
-  $('generate').disabled = true;
+async function refresh() {
+  $('refresh').disabled = true;
   $('summary').classList.add('hidden');
   $('footer').classList.add('hidden');
   $('companies').innerHTML = '';
   $('status').textContent = 'Fetching teams...';
 
-  const teams = await get(`${url}/api/v1/team`, key);
+  const teams = await get(`${API_URL}/api/v1/team`);
   if (!teams) {
-    $('status').innerHTML = 'Could not fetch /api/v1/team — check URL, API key, and that Dependency-Track has CORS enabled.';
-    $('generate').disabled = false; return;
+    $('status').textContent = `Could not reach ${API_URL} - check the DT URL, the API key, and that CORS is enabled.`;
+    $('refresh').disabled = false; return;
   }
 
   const companies = [];
   for (const t of teams) {
     $('status').textContent = `Loading ${t.name}...`;
-    const projects = await get(`${url}/api/v1/acl/team/${t.uuid}?pageSize=500&pageNumber=1`, key) || [];
+    const projects = await get(`${API_URL}/api/v1/acl/team/${t.uuid}?pageSize=500&pageNumber=1`) || [];
     if (!projects.length) continue;
 
     const projList = [];
     for (const p of projects) {
-      const m = await get(`${url}/api/v1/metrics/project/${p.uuid}/current`, key) || {};
-      const findings = await get(`${url}/api/v1/finding/project/${p.uuid}`, key) || [];
+      const m = await get(`${API_URL}/api/v1/metrics/project/${p.uuid}/current`) || {};
+      const findings = await get(`${API_URL}/api/v1/finding/project/${p.uuid}`) || [];
       findings.sort((a, b) =>
         (SEV[(a.vulnerability || {}).severity || 'UNASSIGNED'] ?? 9) -
         (SEV[(b.vulnerability || {}).severity || 'UNASSIGNED'] ?? 9));
@@ -176,7 +159,7 @@ async function generate() {
   }
 
   if (!companies.length) {
-    $('status').textContent = 'No teams with projects found.'; $('generate').disabled = false; return;
+    $('status').textContent = 'No teams with projects found.'; $('refresh').disabled = false; return;
   }
 
   const tot = companies.reduce((a, c) => {
@@ -201,10 +184,11 @@ async function generate() {
   $('ts').textContent = new Date().toLocaleString();
   $('footer').classList.remove('hidden');
   $('status').textContent = '';
-  $('generate').disabled = false;
+  $('refresh').disabled = false;
 }
 
-$('generate').addEventListener('click', generate);
+$('refresh').addEventListener('click', refresh);
+refresh();   // auto-fetch on first load
 </script>
 </body>
 </html>
